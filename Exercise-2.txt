@@ -1,0 +1,339 @@
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.Predicate;
+
+interface Device {
+    int getId();
+    String getType();
+    String getStatus(); // human readable
+    void perform(String command); // commands like "turnOn", "turnOff", "setTemp:75", "lock", "unlock"
+}
+
+abstract class AbstractDevice implements Device {
+    protected final int id;
+    protected final String type;
+
+    public AbstractDevice(int id, String type) {
+        this.id = id;
+        this.type = type;
+    }
+
+    public int getId() { return id; }
+    public String getType() { return type; }
+}
+
+
+class Light extends AbstractDevice {
+    private boolean on = false;
+
+    public Light(int id) { super(id, "light"); }
+
+    public void turnOn() { on = true; }
+    public void turnOff() { on = false; }
+
+    @Override
+    public void perform(String command) {
+        switch (command.toLowerCase()) {
+            case "turnon": turnOn(); break;
+            case "turnoff": turnOff(); break;
+            default: System.out.println("[Light " + id + "] Unknown command: " + command);
+        }
+    }
+
+    @Override
+    public String getStatus() {
+        return "Light " + id + " is " + (on ? "On" : "Off");
+    }
+}
+
+
+class Thermostat extends AbstractDevice {
+    private double temperature;
+
+    public Thermostat(int id, double initialTemp) {
+        super(id, "thermostat");
+        this.temperature = initialTemp;
+    }
+
+    public double getTemperature() { return temperature; }
+    public void setTemperature(double t) { temperature = t; }
+
+    @Override
+    public void perform(String command) {
+        if (command.toLowerCase().startsWith("settemp:")) {
+            try {
+                double t = Double.parseDouble(command.split(":", 2)[1]);
+                setTemperature(t);
+            } catch (Exception e) {
+                System.out.println("[Thermostat " + id + "] Bad temp value: " + command);
+            }
+        } else {
+            System.out.println("[Thermostat " + id + "] Unknown command: " + command);
+        }
+    }
+
+    @Override
+    public String getStatus() {
+        return "Thermostat " + id + " is set to " + temperature + "°";
+    }
+}
+
+
+class DoorLock extends AbstractDevice {
+    private boolean locked = true;
+
+    public DoorLock(int id) { super(id, "door"); }
+
+    public void lock() { locked = true; }
+    public void unlock() { locked = false; }
+
+    @Override
+    public void perform(String command) {
+        switch (command.toLowerCase()) {
+            case "lock": lock(); break;
+            case "unlock": unlock(); break;
+            default: System.out.println("[Door " + id + "] Unknown command: " + command);
+        }
+    }
+
+    @Override
+    public String getStatus() {
+        return "Door " + id + " is " + (locked ? "Locked" : "Unlocked");
+    }
+}
+
+class DeviceFactory {
+    // Overloaded to support thermostat initial temperature
+    public static Device createDevice(int id, String type, Map<String, Object> options) {
+        switch (type.toLowerCase()) {
+            case "light": return new Light(id);
+            case "thermostat":
+                double t = 70.0;
+                if (options != null && options.containsKey("temperature")) {
+                    t = ((Number)options.get("temperature")).doubleValue();
+                }
+                return new Thermostat(id, t);
+            case "door": return new DoorLock(id);
+            default:
+                throw new IllegalArgumentException("Unknown device type: " + type);
+        }
+    }
+}
+
+
+class DeviceProxy implements Device {
+    private final Device real;
+    private final String requiredToken; // very simple access control
+
+    public DeviceProxy(Device real, String requiredToken) {
+        this.real = real;
+        this.requiredToken = requiredToken;
+    }
+
+    // Simulate an access check
+    private boolean accessAllowed(String token) {
+        // In real systems you'd check user roles, tokens, etc.
+        return requiredToken == null || requiredToken.equals(token);
+    }
+
+    // A helper to execute with a token
+    public void performWithToken(String command, String token) {
+        System.out.println("[Proxy] Request to " + real.getType() + " " + real.getId() + " : " + command);
+        if (!accessAllowed(token)) {
+            System.out.println("[Proxy] ACCESS DENIED for device " + real.getId());
+            return;
+        }
+        real.perform(command);
+        System.out.println("[Proxy] Completed: " + real.getStatus());
+    }
+
+   
+    @Override
+    public void perform(String command) { real.perform(command); }
+
+    @Override public int getId() { return real.getId(); }
+    @Override public String getType() { return real.getType(); }
+    @Override public String getStatus() { return real.getStatus(); }
+}
+
+interface Observer {
+    void update(String event, Object data);
+}
+
+interface Subject {
+    void register(Observer o);
+    void unregister(Observer o);
+    void notifyObservers(String event, Object data);
+}
+
+class SmartHub implements Subject {
+    private final Map<Integer, Device> devices = new ConcurrentHashMap<>();
+    private final List<Observer> observers = new CopyOnWriteArrayList<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+
+    // For tracking scheduled tasks (so they can be listed / cancelled)
+    private final List<ScheduledTask> scheduledTasks = Collections.synchronizedList(new ArrayList<>());
+    // For triggers (automation)
+    private final List<AutomationTrigger> triggers = Collections.synchronizedList(new ArrayList<>());
+
+    @Override
+    public void register(Observer o) { observers.add(o); }
+
+    @Override
+    public void unregister(Observer o) { observers.remove(o); }
+
+    @Override
+    public void notifyObservers(String event, Object data) {
+        for (Observer o : observers) {
+            try {
+                o.update(event, data);
+            } catch (Exception e) {
+                System.err.println("[SmartHub] Observer error: " + e.getMessage());
+            }
+        }
+    }
+
+    public void addDevice(Device d) {
+        devices.put(d.getId(), d);
+        notifyObservers("deviceAdded", d);
+    }
+
+    public Device removeDevice(int id) {
+        Device d = devices.remove(id);
+        if (d != null) notifyObservers("deviceRemoved", d);
+        return d;
+    }
+
+    public Device getDevice(int id) { return devices.get(id); }
+
+    public Collection<Device> listDevices() { return devices.values(); }
+      
+    public ScheduledFuture<?> scheduleAtTime(Runnable task, LocalDateTime when, String description) {
+        long delayMs = Duration.between(LocalDateTime.now(), when).toMillis();
+        if (delayMs < 0) {
+            // If time already passed, schedule for next day (simple behaviour); alternative: reject
+            when = when.plusDays(1);
+            delayMs = Duration.between(LocalDateTime.now(), when).toMillis();
+        }
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            try { task.run(); notifyObservers("scheduledTaskExecuted", description); }
+            catch (Exception e) { System.err.println("[Scheduler] error: " + e.getMessage()); }
+        }, delayMs, TimeUnit.MILLISECONDS);
+        scheduledTasks.add(new ScheduledTask(description, when));
+        return future;
+    }
+
+    public List<ScheduledTask> getScheduledTasks() { return Collections.unmodifiableList(scheduledTasks); }
+
+    public void addTrigger(AutomationTrigger t) { triggers.add(t); }
+    public List<AutomationTrigger> getTriggers() { return Collections.unmodifiableList(triggers); }
+
+    public void processEvent(String event, Object data) {
+        // evaluate triggers: simple synchronous evaluation
+        for (AutomationTrigger t : triggers) {
+            try {
+                if (t.matches(event, data)) {
+                    System.out.println("[Automation] Trigger matched: " + t.describe());
+                    t.executeAction(this);
+                    notifyObservers("triggerExecuted", t.describe());
+                }
+            } catch (Exception e) {
+                System.err.println("[Automation] Trigger eval error: " + e.getMessage());
+            }
+        }
+    }
+
+    public void shutdown() {
+        scheduler.shutdownNow();
+    }
+}
+class ScheduledTask {
+    public final String description;
+    public final LocalDateTime when;
+    public ScheduledTask(String description, LocalDateTime when) { this.description = description; this.when = when; }
+    @Override public String toString() { return "{desc:\"" + description + "\", when:\"" + when.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "\"}"; }
+}
+
+class AutomationTrigger {
+    private final String event; // e.g., "thermostatChange"
+    private final Predicate<Object> condition; // lambda to evaluate data
+    private final String action; // e.g., "turnOff(1)"
+
+    public AutomationTrigger(String event, Predicate<Object> condition, String action) {
+        this.event = event;
+        this.condition = condition;
+        this.action = action;
+    }
+
+    public boolean matches(String evt, Object data) {
+        return evt.equals(event) && condition.test(data);
+    }
+
+    public void executeAction(SmartHub hub) {
+        // parse simple action formats like turnOn(id) / turnOff(id) / setTemp(id,val)
+        if (action.matches("turnOn\\(\\d+\\)")) {
+            int id = Integer.parseInt(action.replaceAll("\\D+",""));
+            Device d = hub.getDevice(id);
+            if (d != null) d.perform("turnOn");
+        } else if (action.matches("turnOff\\(\\d+\\)")) {
+            int id = Integer.parseInt(action.replaceAll("\\D+",""));
+            Device d = hub.getDevice(id);
+            if (d != null) d.perform("turnOff");
+        } else if (action.matches("setTemp\\(\\d+,\\d+\\)")) {
+            String inner = action.substring(action.indexOf('(')+1, action.indexOf(')'));
+            String[] parts = inner.split(",");
+            int id = Integer.parseInt(parts[0]);
+            double t = Double.parseDouble(parts[1]);
+            Device d = hub.getDevice(id);
+            if (d != null) d.perform("setTemp:" + t);
+        } else {
+            System.out.println("[Automation] Unknown action format: " + action);
+        }
+    }
+
+    public String describe() { return "on " + event + " if cond -> " + action; }
+}
+
+   Observers implementations
+   - StatusDisplay: prints status on updates
+   - AutomationObserver: forwards events to SmartHub.processEvent for trigger evaluation
+   ----------------------- */
+class StatusDisplay implements Observer {
+    private final SmartHub hub;
+    public StatusDisplay(SmartHub hub) { this.hub = hub; }
+
+    @Override
+    public void update(String event, Object data) {
+        System.out.println("[StatusDisplay] Event: " + event + " | Data: " + (data == null ? "-" : data.toString()));
+        if ("deviceAdded".equals(event) || "deviceRemoved".equals(event) || "scheduledTaskExecuted".equals(event) || "triggerExecuted".equals(event)) {
+            // print summary
+            System.out.println("Status Report:");
+            for (Device d : hub.listDevices()) System.out.println("  - " + d.getStatus());
+        }
+    }
+}
+
+class AutomationObserver implements Observer {
+    private final SmartHub hub;
+    public AutomationObserver(SmartHub hub) { this.hub = hub; }
+    @Override
+    public void update(String event, Object data) {
+        // pass the event to hub to evaluate triggers
+        hub.processEvent(event, data);
+    }
+}
+
+public class SmartHomeSystem {
+    public static void main(String[] args) throws Exception {
+        SmartHub hub = new SmartHub();
+
+        // Observers
+        StatusDisplay display = new StatusDisplay(hub);
+        AutomationObserver autoObs = new AutomationObserver(hub);
+        hub.register(display);
+        hub.register(autoObs);
+
+        // Create devices with factory
+        Device light1 = DeviceFactory.createDevice(

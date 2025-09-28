@@ -1,0 +1,369 @@
+Behavioral Pattern Use Case 1: Observer — News Publisher / Subscriber:
+interface NewsSubscriber {
+    void update(String news);
+}
+
+interface NewsPublisher {
+    void register(NewsSubscriber sub);
+    void unregister(NewsSubscriber sub);
+    void notifySubscribers(String news);
+}
+
+class BreakingNewsPublisher implements NewsPublisher {
+    private List<NewsSubscriber> subscribers = new ArrayList<>();
+    @Override
+    public void register(NewsSubscriber sub) {
+        subscribers.add(sub);
+    }
+    @Override
+    public void unregister(NewsSubscriber sub) {
+        subscribers.remove(sub);
+    }
+    @Override
+    public void notifySubscribers(String news) {
+        for (NewsSubscriber sub : subscribers) {
+            sub.update(news);
+        }
+    }
+    // method to publish a news item
+    public void publishNews(String news) {
+        System.out.println("[Publisher] Publishing news: " + news);
+        notifySubscribers(news);
+    }
+}
+
+// Concrete subscriber: App
+class AppSubscriber implements NewsSubscriber {
+    private String name;
+    public AppSubscriber(String name) { this.name = name; }
+    @Override
+    public void update(String news) {
+        System.out.println("AppSubscriber " + name + " received: " + news);
+    }
+}
+
+// Concrete subscriber: Email
+class EmailSubscriber implements NewsSubscriber {
+    private String email;
+    public EmailSubscriber(String email) { this.email = email; }
+    @Override
+    public void update(String news) {
+        System.out.println("Email to " + email + ": " + news);
+    }
+}
+
+// Demo
+public class ObserverDemo {
+    public static void main(String[] args) {
+        BreakingNewsPublisher publisher = new BreakingNewsPublisher();
+
+        AppSubscriber app1 = new AppSubscriber("User1");
+        AppSubscriber app2 = new AppSubscriber("User2");
+        EmailSubscriber email1 = new EmailSubscriber("alice@example.com");
+
+        publisher.register(app1);
+        publisher.register(app2);
+        publisher.register(email1);
+
+        publisher.publishNews("Earthquake in City X!");
+        System.out.println("--- Unregistering app2 ---");
+        publisher.unregister(app2);
+        publisher.publishNews("Heavy rains expected tomorrow.");
+    }
+}
+
+
+Behavioral Pattern Use Case 2: Strategy — Payment Methods:
+
+// Strategy interface
+interface PaymentStrategy {
+    void pay(double amount);
+}
+
+// Concrete strategies
+class CreditCardPayment implements PaymentStrategy {
+    private String cardNumber;
+    public CreditCardPayment(String cardNumber) { this.cardNumber = cardNumber; }
+    @Override
+    public void pay(double amount) {
+        System.out.println("Paid " + amount + " via Credit Card: " + cardNumber);
+    }
+}
+
+class PayPalPayment implements PaymentStrategy {
+    private String paypalAccount;
+    public PayPalPayment(String account) { this.paypalAccount = account; }
+    @Override
+    public void pay(double amount) {
+        System.out.println("Paid " + amount + " via PayPal: " + paypalAccount);
+    }
+}
+
+class BitcoinPayment implements PaymentStrategy {
+    private String bitcoinAddress;
+    public BitcoinPayment(String address) { this.bitcoinAddress = address; }
+    @Override
+    public void pay(double amount) {
+        System.out.println("Paid " + amount + " via Bitcoin: " + bitcoinAddress);
+    }
+}
+
+// Context
+class ShoppingCart {
+    private PaymentStrategy paymentStrategy;
+    public void setPaymentStrategy(PaymentStrategy strat) {
+        paymentStrategy = strat;
+    }
+    public void checkout(double amount) {
+        if (paymentStrategy == null) {
+            throw new IllegalStateException("Payment strategy not set");
+        }
+        paymentStrategy.pay(amount);
+    }
+}
+
+// Demo
+public class StrategyDemo {
+    public static void main(String[] args) {
+        ShoppingCart cart = new ShoppingCart();
+
+        // choose credit card
+        cart.setPaymentStrategy(new CreditCardPayment("4111-2222-3333-4444"));
+        cart.checkout(100.0);
+
+        // later choose PayPal
+        cart.setPaymentStrategy(new PayPalPayment("user@paypal"));
+        cart.checkout(50.5);
+
+        // Bitcoin
+        cart.setPaymentStrategy(new BitcoinPayment("1BitAddrXYZ123"));
+        cart.checkout(0.75);
+    }
+}
+
+
+Creational Pattern Use Case 1: Singleton — Logger:
+
+public class Logger {
+    // Eager initialization
+    private static final Logger INSTANCE = new Logger();
+
+    private Logger() {
+        // private constructor
+    }
+
+    public static Logger getInstance() {
+        return INSTANCE;
+    }
+
+    public void log(String msg) {
+        System.out.println("[LOG] " + msg);
+    }
+}
+
+// Demo usage
+public class SingletonDemo {
+    public static void main(String[] args) {
+        Logger lg1 = Logger.getInstance();
+        Logger lg2 = Logger.getInstance();
+        System.out.println("Same instance? " + (lg1 == lg2));
+
+        lg1.log("Starting application");
+        lg2.log("Processing data");
+    }
+}
+
+Creational Pattern Use Case 2: Builder — Complex “UserProfile” object:
+
+public class UserProfile {
+    private final String username;    // required
+    private final String email;       // optional
+    private final String address;     // optional
+    private final String phone;       // optional
+    private final Integer age;        // optional
+
+    // Private constructor: only Builder can build
+    private UserProfile(Builder b) {
+        this.username = b.username;
+        this.email = b.email;
+        this.address = b.address;
+        this.phone = b.phone;
+        this.age = b.age;
+    }
+
+    public static class Builder {
+        private final String username;  // required
+        private String email;
+        private String address;
+        private String phone;
+        private Integer age;
+
+        public Builder(String username) {
+            this.username = username;
+        }
+
+        public Builder email(String email) {
+            this.email = email;
+            return this;
+        }
+        public Builder address(String address) {
+            this.address = address;
+            return this;
+        }
+        public Builder phone(String phone) {
+            this.phone = phone;
+            return this;
+        }
+        public Builder age(int age) {
+            this.age = age;
+            return this;
+        }
+
+        public UserProfile build() {
+            return new UserProfile(this);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "UserProfile[" +
+                "username='" + username + '\'' +
+                (email != null ? ", email='" + email + '\'' : "") +
+                (address != null ? ", address='" + address + '\'' : "") +
+                (phone != null ? ", phone='" + phone + '\'' : "") +
+                (age != null ? ", age=" + age : "") +
+                "]";
+    }
+}
+
+// Demo
+public class BuilderDemo {
+    public static void main(String[] args) {
+        UserProfile u1 = new UserProfile.Builder("john_doe")
+                .email("john@example.com")
+                .address("123 Main St")
+                .age(30)
+                .build();
+        System.out.println(u1);
+
+        // You can build with fewer fields
+        UserProfile u2 = new UserProfile.Builder("alice123")
+                .phone("555-1234")
+                .build();
+        System.out.println(u2);
+    }
+}
+
+Structural Pattern Use Case 1: Adapter — Voltage Adapter:
+
+// The “target” interface
+interface TargetSocket {
+    int getVoltage();  // returns 220V
+}
+
+// The “adaptee” (incompatible interface)
+class Device110V {
+    public int provide110V() {
+        return 110;
+    }
+}
+
+// Adapter class
+class VoltageAdapter implements TargetSocket {
+    private Device110V device;
+    public VoltageAdapter(Device110V device) {
+        this.device = device;
+    }
+    @Override
+    public int getVoltage() {
+        int v110 = device.provide110V();
+        // adapt: convert or transform as needed (here maybe scale, or just wrap)
+        System.out.println("Adapter converting 110V to 220V");
+        return v110 * 2;  // just a silly conversion for demo
+    }
+}
+
+// Demo
+public class AdapterDemo {
+    public static void main(String[] args) {
+        Device110V oldDevice = new Device110V();
+        TargetSocket adapted = new VoltageAdapter(oldDevice);
+        int voltage = adapted.getVoltage();
+        System.out.println("Voltage via adapter: " + voltage + " V");
+    }
+}
+
+Structural Pattern Use Case 2: Decorator — Window with Scrollbars / Borders:
+
+// Component interface
+interface Window {
+    void draw();
+}
+
+// Concrete component
+class SimpleWindow implements Window {
+    @Override
+    public void draw() {
+        System.out.println("Drawing a simple window");
+    }
+}
+
+// Base decorator
+abstract class WindowDecorator implements Window {
+    protected Window window;
+    public WindowDecorator(Window w) {
+        this.window = w;
+    }
+    @Override
+    public void draw() {
+        window.draw();  // delegate
+    }
+}
+
+// Concrete decorator: Scrollbar
+class ScrollbarDecorator extends WindowDecorator {
+    public ScrollbarDecorator(Window w) {
+        super(w);
+    }
+    @Override
+    public void draw() {
+        super.draw();
+        drawScrollbar();
+    }
+    private void drawScrollbar() {
+        System.out.println("  + Drawing scrollbars");
+    }
+}
+
+// Concrete decorator: Border
+class BorderDecorator extends WindowDecorator {
+    public BorderDecorator(Window w) {
+        super(w);
+    }
+    @Override
+    public void draw() {
+        super.draw();
+        drawBorder();
+    }
+    private void drawBorder() {
+        System.out.println("  + Drawing border");
+    }
+}
+
+// Demo
+public class DecoratorDemo {
+    public static void main(String[] args) {
+        Window simple = new SimpleWindow();
+        System.out.println("Simple window:");
+        simple.draw();
+
+        System.out.println("\nWindow with scrollbar:");
+        Window scroll = new ScrollbarDecorator(simple);
+        scroll.draw();
+
+        System.out.println("\nWindow with scrollbar + border:");
+        Window decorated = new BorderDecorator(scroll);
+        decorated.draw();
+    }
+}
+
